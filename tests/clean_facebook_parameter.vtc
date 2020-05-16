@@ -1,0 +1,46 @@
+varnishtest "Clean facebook query parameter test"
+
+server s1 {
+    rxreq
+    txresp -status 200 
+
+    rxreq
+    txresp -status 200 
+
+    rxreq
+    txresp -status 200 
+
+    rxreq
+    txresp -status 200 
+} -start
+
+varnish v1 -vcl+backend {
+    sub vcl_recv {
+        if (req.url ~ "(\?|&)fbclid=") {
+            set req.url = regsuball(req.url, "fbclid=[^&=]+&?", "");
+            set req.url = regsub(req.url, "[?|&]+$", "");
+        }
+    }
+
+    sub vcl_deliver {
+        set resp.http.X-Cleaned-Url = req.url;
+    }
+} -start
+
+client c1 {
+    txreq -url "/?fbclid=X"
+    rxresp
+    expect resp.http.X-Cleaned-Url == "/"
+
+    txreq -url "/?fbclid=X&param1=1"
+    rxresp
+    expect resp.http.X-Cleaned-Url == "/?param1=1"
+
+    txreq -url "/?fbclid=X&param1=1&param2=2"
+    rxresp
+    expect resp.http.X-Cleaned-Url == "/?param1=1&param2=2"
+
+    txreq -url "/?param1=1&fbclid=X&param2=2"
+    rxresp
+    expect resp.http.X-Cleaned-Url == "/?param1=1&param2=2"
+} -run
